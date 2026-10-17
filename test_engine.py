@@ -140,3 +140,13 @@ def test_set_driver_shifts_paths():
     assert np.allclose(a.growth_path, [0.22, 0.17, 0.12, 0.07, 0.05])
     g = reverse_dcf(c, a, "growth_stage1", -0.2, 0.5, target=run_dcf(c, a)["per_share"])
     assert g is not None and abs(g - a.growth_stage1) < 1e-5
+
+
+def test_loss_making_defaults_are_sensible():
+    c = Company(revenue=50000, ebit=-60, da=1600, capex=1750, nwc=1400, cash=8500, debt=4600, shares=920,
+                price=325, eff_tax=0.25, interest=180, net_income=400, book_equity=38000, beta=0.3, currency="₹",
+                history={"year": [2023, 2026], "revenue": [7000, 50000], "ebit": [-1400, -60]})
+    a = defaults_from_company(c)
+    assert a.target_margin == 0.12 and a.wacc.beta_method == "bottom_up" and a.wacc.kd_method == "direct"
+    assert len(a.notes) == 4
+    assert run_dcf(c, a)["per_share"] > 0

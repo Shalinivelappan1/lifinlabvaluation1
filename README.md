@@ -26,7 +26,7 @@ The browser opens at http://localhost:8501. Python 3.10 or later.
 | ② Story & assumptions | The "art" and the value drivers together: pick a story archetype (steady compounder, high-growth disruptor, mature cash cow, cyclical at the peak, turnaround) and apply it, write your narrative, then set every value driver beside it: forecast years, high-growth years, growth, year-1 and target margins, reinvestment (sales-to-capital or capex/D&A/NWC), terminal value method, terminal growth and ROIC, mature WACC, mid-year convention, probability of failure. |
 | ③ Cost of capital | CAPM with country risk (scaled by beta or not), size and company-specific premiums; regression, Blume-adjusted or bottom-up relevered beta; synthetic rating from interest coverage or a direct cost of debt; target weights; optional override. |
 | ④ Forecast & DCF | An optional year-by-year table: type revenue growth and EBIT margin for each year yourself (overrides the fade; reset any time). Then the full year-by-year forecast (revenue, margin, EBIT, tax, NOPAT, D&A, capex, reinvestment, FCFF, WACC, discount factor, PV, invested capital, ROIC), the FCFF chart and the bridge from operating value to equity. The forecast shows even if shares or price are missing. |
-| ⑤ Other models | FCFE (constant debt ratio), two-stage dividend discount, residual income, and relative valuation on an editable peer table (median, mean or harmonic mean). |
+| ⑤ Other models | FCFE (constant debt ratio), two-stage dividend discount, residual income, and relative valuation: type peer tickers and fetch their P/E, EV/EBITDA, EV/Sales and P/B, or edit the peer table yourself (median, mean or harmonic mean). |
 | ⑥ Risk & judgement | Two-way sensitivity tables (WACC × terminal growth, growth × margin), tornado chart, editable bear/base/bull scenarios with probabilities, Monte Carlo with triangular distributions and growth–margin correlation, and reverse DCF (what growth, margin or terminal growth the price implies). |
 | ⑦ Health check | Red/amber/green flags: terminal growth above the risk-free rate, terminal value share, ROIC vs WACC in perpetuity, extreme forecast ROIC, aggressive margin expansion, odd beta, cost of debt below risk-free, implied exit multiple vs peers, value far from price. |
 | ⑧ Summary & export | Football field of all methods against the price, your weights for each method, a blended value and a Buy/Hold/Sell call with your margin of safety. Downloads: Excel workbook of every table, the full inputs as JSON (restore later from the sidebar), and a one-page memo. |
@@ -38,6 +38,9 @@ The browser opens at http://localhost:8501. Python 3.10 or later.
 - **Live ticker** (needs internet): any Yahoo Finance ticker. Indian stocks end in `.NS` (NSE) or `.BO` (BSE)
   and are converted to ₹ crore and crore shares. Fields the feed lacks are listed so you can fill them in.
   Always check the numbers; free data feeds have gaps and reclassifications.
+  For loss-making or thin-margin firms the default target margin is a 12% placeholder reached in year 7, an
+  unreliable feed beta (below 0.5 or above 2.5) is replaced by a bottom-up beta, and negative EBIT switches the
+  cost of debt to risk-free + country risk + 3%. The Story tab lists every default it set and why.
 - **Upload**: download the CSV template from the sidebar, fill it in, upload it (CSV or Excel).
 
 Units: money in one unit (₹ crore or $ million) and shares in the matching unit (crore or million), so

@@ -237,3 +237,47 @@ def fetch_ticker(ticker: str):
     if not info.get("beta"):
         warnings.append("Beta not available: defaulted to 1.0.")
     return c, warnings
+
+
+def fetch_peer_multiples(tickers: list[str]):
+    """Return (DataFrame of peer multiples, warnings). Uses company info, else rebuilds from statements."""
+    import yfinance as yf
+
+    rows, warns = [], []
+    for t in [x.strip().upper() for x in tickers if x.strip()]:
+        try:
+            tk = yf.Ticker(t)
+            try:
+                info = tk.info or {}
+            except Exception:
+                info = {}
+            pe, evebitda, evs, pb = (info.get("trailingPE"), info.get("enterpriseToEbitda"),
+                                     info.get("enterpriseToRevenue"), info.get("priceToBook"))
+            name = info.get("shortName") or t
+            if not any([pe, evebitda, evs, pb]):
+                # fallback: build the multiples from statements and the last price
+                inc, cf, bs = tk.income_stmt, tk.cashflow, tk.balance_sheet
+                fi = tk.fast_info
+                mcap = float(fi["market_cap"] or 0)
+                rev = _pick(inc, ["Total Revenue", "Operating Revenue"])
+                ebit = _pick(inc, ["Operating Income", "EBIT"])
+                ni = _pick(inc, ["Net Income", "Net Income Common Stockholders"])
+                da = _pick(cf, ["Depreciation And Amortization", "Depreciation Amortization Depletion"])
+                eq = _pick(bs, ["Stockholders Equity", "Common Stock Equity"])
+                debt = _pick(bs, ["Total Debt"])
+                cash = _pick(bs, ["Cash Cash Equivalents And Short Term Investments", "Cash And Cash Equivalents"])
+                ev = mcap + (float(debt.iloc[0]) if debt is not None else 0) - (float(cash.iloc[0]) if cash is not None else 0)
+                v = lambda s_: float(s_.iloc[0]) if s_ is not None else None
+                ebitda = (v(ebit) or 0) + (v(da) or 0) if ebit is not None else None
+                pe = mcap / v(ni) if ni is not None and v(ni) > 0 and mcap else None
+                evebitda = ev / ebitda if ebitda and ebitda > 0 and mcap else None
+                evs = ev / v(rev) if rev is not None and v(rev) > 0 and mcap else None
+                pb = mcap / v(eq) if eq is not None and v(eq) > 0 and mcap else None
+            if not any([pe, evebitda, evs, pb]):
+                warns.append(f"{t}: no data returned.")
+                continue
+            rows.append({"Peer": f"{name} ({t})", "P/E": pe, "EV/EBITDA": evebitda, "EV/Sales": evs, "P/B": pb})
+        except Exception as e:  # noqa: BLE001
+            warns.append(f"{t}: {e}")
+    df = pd.DataFrame(rows, columns=["Peer", "P/E", "EV/EBITDA", "EV/Sales", "P/B"])
+    return df, warns

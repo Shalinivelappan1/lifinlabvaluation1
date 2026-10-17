@@ -16,7 +16,7 @@ import streamlit as st
 try:
     from valuation.checks import STORIES, health_checks
     from valuation.data import (EMPTY_PEERS, FIELDS, SAMPLE_PEERS, SAMPLES, company_from_upload,
-                                fetch_ticker, sample_company, template_csv)
+                                fetch_peer_multiples, fetch_ticker, sample_company, template_csv)
     from valuation.engine import Assumptions, Company, base_paths, defaults_from_company, run_dcf
     from valuation.explain import TIPS
     from valuation.export import from_json, to_excel, to_json
@@ -27,7 +27,7 @@ try:
 except ImportError:
     from lv_checks import STORIES, health_checks
     from lv_data import (EMPTY_PEERS, FIELDS, SAMPLE_PEERS, SAMPLES, company_from_upload,
-                                fetch_ticker, sample_company, template_csv)
+                                fetch_peer_multiples, fetch_ticker, sample_company, template_csv)
     from lv_engine import Assumptions, Company, base_paths, defaults_from_company, run_dcf
     from lv_explain import TIPS
     from lv_export import from_json, to_excel, to_json
@@ -73,7 +73,7 @@ STORY_KEYS = ["n_story", "n_market", "n_edge", "n_risks", "n_catalyst"]
 
 
 # ---------------------------------------------------------------- state helpers
-RESET_PREFIXES = ("ddm_", "ri_", "mc_", "fcfe_", "scn_", "wt_", "peer_editor", "peers_edited", "yby_")
+RESET_PREFIXES = ("ddm_", "ri_", "mc_", "fcfe_", "scn_", "wt_", "peer_editor", "peers_edited", "peer_msg", "yby_")
 
 
 def put_company(c: Company):
@@ -88,7 +88,9 @@ def put_company(c: Company):
     st.session_state["c_history"] = c.history or {}
     peers = SAMPLE_PEERS.get(c.ticker)
     st.session_state["peers_df"] = (peers if peers is not None else EMPTY_PEERS).copy()
-    put_assumptions(defaults_from_company(c))
+    a0 = defaults_from_company(c)
+    put_assumptions(a0)
+    st.session_state["default_notes"] = list(a0.notes)
     st.session_state.pop("mc_res", None)
 
 
@@ -209,6 +211,15 @@ def indian(x, dp=0):
 def kpi(col, label, value):
     col.markdown(f"<div class='kpi'><div class='l'>{label}</div><div class='v'>{value}</div></div>",
                  unsafe_allow_html=True)
+
+
+def per_share_text(v, c):
+    """Equity cannot be worth less than zero to shareholders (limited liability)."""
+    if v is None or not np.isfinite(v):
+        return "–"
+    if v < 0:
+        return f"{c.currency}0 <span style='font-size:.8rem;color:{RED}'>(model gives {money(v, c, 0)})</span>"
+    return money(v, c, 2)
 
 
 def pct(x, dp=1):
@@ -348,7 +359,7 @@ st.markdown(f"## {C.name} <span style='font-size:1rem;color:{GREY}'>{C.ticker} �
 k1, k2, k3, k4, k5 = st.columns(5)
 kpi(k1, "Market price", money(C.price, C, 2))
 if R:
-    kpi(k2, "DCF value per share", money(R["per_share"], C, 2) if VALID else "–")
+    kpi(k2, "DCF value per share", per_share_text(R["per_share"], C) if VALID else "–")
     up = R["upside"]
     kpi(k3, "Upside vs price", f"<span style='color:{TEAL if up >= 0 else RED}'>{up:+.1%}</span>"
         if VALID and np.isfinite(up) else "–")
@@ -414,6 +425,11 @@ with tabs[0], guard("Company"):
 # ---------------------------------------------------------------- 2 story
 with tabs[1], guard("Story"):
     tip("story")
+    if st.session_state.get("default_notes"):
+        with st.container(border=True):
+            st.markdown("**How the starting assumptions were set for this company**")
+            for n_ in st.session_state["default_notes"]:
+                st.markdown(f"- {n_}")
     st.markdown("#### Pick a starting story, then make it yours")
     s1, s2 = st.columns([2, 1])
     s1.selectbox("Story archetype", list(STORIES), key="story_key")
@@ -610,7 +626,12 @@ with tabs[3], guard("Forecast & DCF"):
         kpi(m[0], f"PV of forecast FCFF ({U})", money(R["pv_fcff"], C))
         kpi(m[1], f"PV of terminal value ({U})", money(R["pv_tv"], C))
         kpi(m[2], f"Equity value ({U})", money(R["equity"], C))
-        kpi(m[3], "Value per share", money(R["per_share"], C, 2) if VALID else "–")
+        kpi(m[3], "Value per share", per_share_text(R["per_share"], C) if VALID else "–")
+        if VALID and R["per_share"] < 0:
+            st.warning("The model gives negative equity value: on these assumptions the operations are worth less than "
+                       "the debt and other claims. Shareholders cannot lose more than their investment, so the "
+                       "floor is zero. For a loss-making firm, revisit the target margin and growth on ② Story & "
+                       "assumptions.", icon="⚠️")
         if A.terminal_method == "gordon":
             kpi(m[4], "Implied exit EV/EBITDA", f"{R['implied_exit_multiple']:.1f}×")
         else:
@@ -715,7 +736,30 @@ with tabs[4], guard("Other models"):
                 st.error(str(e))
     with sub[3]:
         tip("relative")
-        st.caption("Edit the peer table: add rows, paste from Excel, or clear cells you do not trust.")
+        pf1, pf2 = st.columns([3, 1])
+        pf1.text_input("Peer tickers (comma separated)", key="peer_tickers",
+                       placeholder="e.g. TCS.NS, WIPRO.NS, HCLTECH.NS  or  MSFT, ORCL")
+        pf2.write("")
+        pf2.write("")
+        if pf2.button("Fetch peer multiples", width="stretch"):
+            with st.spinner("Fetching peers…"):
+                try:
+                    pdf_, pw_ = fetch_peer_multiples(st.session_state.get("peer_tickers", "").split(","))
+                    if not pdf_.empty:
+                        st.session_state["peers_df"] = pdf_
+                        st.session_state.pop("peer_editor", None)
+                        st.session_state["peer_msg"] = ("ok", f"Loaded {len(pdf_)} peers. " + " ".join(pw_))
+                    else:
+                        st.session_state["peer_msg"] = ("err", "No peer data returned. " + " ".join(pw_)
+                                                        + " Type the multiples into the table instead.")
+                except Exception as e:  # noqa: BLE001
+                    st.session_state["peer_msg"] = ("err", f"Could not fetch peers ({e}). Type the multiples in.")
+            st.rerun()
+        if st.session_state.get("peer_msg"):
+            k_, t_ = st.session_state["peer_msg"]
+            (st.success if k_ == "ok" else st.warning)(t_)
+        st.caption("Or edit the peer table directly: add rows, paste from Excel, or clear cells you do not trust. "
+                   "Pick peers with similar business, growth and risk.")
         PEERS = st.data_editor(st.session_state["peers_df"], num_rows="dynamic",
                                width="stretch", key="peer_editor")
         st.session_state["peers_edited"] = PEERS

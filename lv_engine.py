@@ -72,6 +72,7 @@ class Assumptions:
     mid_year: bool = False
     failure_prob: float = 0.0
     distress_recovery: float = 0.5      # fraction of operating value recovered in failure
+    notes: list = field(default_factory=list)  # why the defaults were chosen (shown in the app)
     growth_path: list | None = None     # optional year-by-year revenue growth (overrides the fade)
     margin_path: list | None = None     # optional year-by-year EBIT margin (overrides convergence)
     wacc: WaccInputs = field(default_factory=WaccInputs)
@@ -256,30 +257,61 @@ def _implied_growth(tv, nopat_n, w, roic):
 
 
 def defaults_from_company(c: Company) -> Assumptions:
-    """Sensible starting assumptions from the company's own history."""
+    """Sensible starting assumptions from the company's own history.
+
+    Loss-making or very-low-margin firms get a placeholder target margin (the story must set the real one),
+    an unusual beta is replaced by a bottom-up beta, and negative EBIT switches the cost of debt to a direct
+    estimate (a synthetic rating from negative coverage would say 'default').
+    """
     a = Assumptions()
-    hist = c.history or {}
-    revs = [r for r in hist.get("revenue", []) if r]
-    if len(revs) >= 2 and revs[0] > 0:
-        cagr = (revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1
-        a.growth_y1 = a.growth_stage1 = float(np.clip(cagr, -0.05, 0.30))
-    margin = c.ebit / c.revenue if c.revenue else 0.1
-    a.margin_y1 = float(margin)
-    a.target_margin = float(margin)
-    ic = c.ic0()
-    a.sales_to_capital = float(np.clip(c.revenue / ic, 0.5, 6.0)) if ic > 0 else 2.0
-    a.da_pct = c.da / c.revenue if c.revenue else 0.03
-    a.capex_pct = c.capex / c.revenue if c.revenue else 0.04
-    a.nwc_pct = c.nwc / c.revenue if c.revenue else 0.1
-    roic = c.ebit * (1 - c.eff_tax) / ic if ic > 0 else 0.15
-    a.terminal_roic = float(np.clip(roic, 0.08, 0.40))
-    a.wacc.beta_given = c.beta or 1.0
-    a.wacc.marginal_tax = 0.25 if c.currency == "₹" else 0.21 if c.currency == "$" else 0.25
+    a.notes = []
     if c.currency == "₹":
         a.wacc.rf, a.wacc.erp, a.wacc.crp = 0.065, 0.045, 0.025
         a.terminal_growth = 0.05
     else:
         a.wacc.rf, a.wacc.erp, a.wacc.crp = 0.043, 0.045, 0.0
         a.terminal_growth = 0.025
+    a.wacc.marginal_tax = 0.25 if c.currency == "₹" else 0.21 if c.currency == "$" else 0.25
+
+    hist = c.history or {}
+    revs = [r for r in hist.get("revenue", []) if r]
+    if len(revs) >= 2 and revs[0] > 0:
+        cagr = (revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1
+        a.growth_y1 = a.growth_stage1 = float(np.clip(cagr, -0.05, 0.30))
+        if cagr > 0.30:
+            a.notes.append(f"Past revenue growth was {cagr:.0%} a year; the default caps future growth at 30%.")
+    margin = c.ebit / c.revenue if c.revenue else 0.1
+    a.margin_y1 = float(margin)
+    if margin < 0.05:
+        a.target_margin = 0.12
+        a.margin_converge_year = 7
+        a.notes.append(f"Today's EBIT margin is {margin:.1%}. A loss-making or thin-margin firm cannot be valued on "
+                       "today's margin for ever, so the target margin is a 12% placeholder reached in year 7. "
+                       "This is the biggest call in your story: set it on ② Story & assumptions.")
+    else:
+        a.target_margin = float(margin)
+    ic = c.ic0()
+    a.sales_to_capital = float(np.clip(c.revenue / ic, 0.5, 6.0)) if ic > 0 else 2.0
+    a.da_pct = c.da / c.revenue if c.revenue else 0.03
+    a.capex_pct = c.capex / c.revenue if c.revenue else 0.04
+    a.nwc_pct = c.nwc / c.revenue if c.revenue else 0.1
+    roic = c.ebit * (1 - c.eff_tax) / ic if ic > 0 else 0.15
+    if margin < 0.05:
+        a.terminal_roic = 0.15
+    else:
+        a.terminal_roic = float(np.clip(roic, 0.10, 0.40))
+
+    b = c.beta or 1.0
+    if b < 0.5 or b > 2.5:
+        a.wacc.beta_method = "bottom_up"
+        a.wacc.unlevered_beta = 1.0
+        a.notes.append(f"The data feed's beta of {b:.2f} looks unreliable, so the default uses a bottom-up beta "
+                       "(unlevered 1.0, relevered at the company's debt). Change it on ③ Cost of capital.")
+    a.wacc.beta_given = b
     a.wacc.target_de = c.debt / (c.price * c.shares) if c.price and c.shares else 0.1
+    if c.ebit <= 0:
+        a.wacc.kd_method = "direct"
+        a.wacc.kd_direct = a.wacc.rf + a.wacc.crp + 0.03
+        a.notes.append("EBIT is negative, so a rating from interest coverage would say 'default'. The default "
+                       f"pre-tax cost of debt is {a.wacc.kd_direct:.1%} (risk-free + country risk + 3%).")
     return a
