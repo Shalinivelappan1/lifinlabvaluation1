@@ -103,6 +103,9 @@ def company_from_upload(file) -> Company:
 # ---------------------------------------------------------------------------
 # Live data (needs internet). Every number stays editable afterwards.
 # ---------------------------------------------------------------------------
+REV_ROWS = ["Total Revenue", "Operating Revenue", "Revenue", "Total Revenues"]
+
+
 def _pick(df, names):
     if df is None or df.empty:
         return None
@@ -118,16 +121,66 @@ def fetch_ticker(ticker: str):
     """Return (Company, warnings). Indian tickers end in .NS or .BO and are converted to Rs crore."""
     import yfinance as yf
 
+    import time
+
     warnings = []
-    tk = yf.Ticker(ticker)
+    ticker = ticker.strip().upper()
+
+    def grab(tk, attr):
+        """Read one statement; retry briefly if Yahoo rate-limits the server."""
+        for attempt in range(3):
+            try:
+                df = getattr(tk, attr)
+                return df if isinstance(df, pd.DataFrame) else None
+            except Exception as e:  # noqa: BLE001
+                if "rate" in str(e).lower() or "too many" in str(e).lower():
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                return None
+        return None
+
+    def has_rev(df):
+        return _pick(df, REV_ROWS) is not None
+
+    candidates = [ticker]
+    if ticker.endswith(".NS"):
+        candidates.append(ticker[:-3] + ".BO")
+    elif ticker.endswith(".BO"):
+        candidates.append(ticker[:-3] + ".NS")
+    tk = inc = None
+    used = ticker
+    for t in candidates:
+        tk_ = yf.Ticker(t)
+        inc_ = grab(tk_, "income_stmt")
+        source = "yearly"
+        if not has_rev(inc_):
+            inc_ = grab(tk_, "ttm_income_stmt")
+            source = "trailing twelve months"
+        if not has_rev(inc_):
+            q = grab(tk_, "quarterly_income_stmt")
+            if has_rev(q) and q.shape[1] >= 4:
+                inc_ = q.iloc[:, :4].apply(pd.to_numeric, errors="coerce").sum(axis=1, min_count=4).to_frame(q.columns[0])
+                source = "sum of the last four quarters"
+        if has_rev(inc_):
+            tk, inc, used = tk_, inc_, t
+            if source != "yearly":
+                warnings.append(f"Yearly statements were not available; revenue and profit use the {source}.")
+            if t != ticker:
+                warnings.append(f"{ticker} returned no statements; loaded {t} instead.")
+            break
+    if tk is None:
+        raise ValueError(f"Yahoo Finance returned no financial statements for {ticker}"
+                         + (f" or {candidates[1]}" if len(candidates) > 1 else "")
+                         + ". Yahoo may be limiting requests from this server: wait a minute and try again, "
+                           "or upload the template instead")
+    ticker = used
     try:
         info = tk.info or {}
     except Exception as e:  # network or API change
         info = {}
-        warnings.append(f"Could not read company info ({e}).")
-    inc = getattr(tk, "income_stmt", None)
-    cf = getattr(tk, "cashflow", None)
-    bs = getattr(tk, "balance_sheet", None)
+        warnings.append(f"Could not read company info ({str(e)[:80]}).")
+    cf = grab(tk, "cashflow")
+    bs = grab(tk, "balance_sheet")
     cur = info.get("currency") or ("INR" if ticker.upper().endswith((".NS", ".BO")) else "USD")
     if cur == "INR":
         scale, sym, unit = 1e7, "₹", "crore"
@@ -141,7 +194,7 @@ def fetch_ticker(ticker: str):
             return default
         return sign * float(s.iloc[0]) / scale
 
-    rev_s = _pick(inc, ["Total Revenue", "Operating Revenue"])
+    rev_s = _pick(inc, REV_ROWS)
     ebit_s = _pick(inc, ["Operating Income", "EBIT"])
     revenue = float(rev_s.iloc[0]) / scale if rev_s is not None else 0.0
     if rev_s is None:

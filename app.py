@@ -245,8 +245,8 @@ def cb_fetch():
         st.session_state["msg"] = ("ok", f"Loaded {c.name}. Check every number: "
                                    + (" ".join(warns) if warns else "all main fields found."))
     except Exception as e:
-        st.session_state["msg"] = ("err", f"Could not fetch {t}: {e}. You may be offline; load a sample or "
-                                          "upload a file instead.")
+        st.session_state["msg"] = ("err", f"Could not fetch {t}: {e}. You can also load a sample or upload "
+                                          "the template.")
 
 
 def cb_upload():
