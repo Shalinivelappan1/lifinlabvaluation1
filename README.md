@@ -18,6 +18,27 @@ The browser opens at http://localhost:8501. Python 3.10 or later.
 **Share it with a class:** push this folder to a GitHub repository and deploy it free on
 [Streamlit Community Cloud](https://streamlit.io/cloud) (main file: `app.py`). Students then need only a link.
 
+## Reasonable starting assumptions: the rulebook
+
+When a company loads, its starting assumptions come from a transparent rulebook (switchable to "company history
+only" on ② Story & assumptions):
+
+| Assumption | Rule |
+|---|---|
+| Growth | Historical revenue CAGR, kept between terminal growth and a 30% cap |
+| High-growth years | Growth above 25% → 10 years (12-year forecast); 15–25% → 7; 8–15% → 5; otherwise 3 |
+| Target margin | Below the sector benchmark: converge to it (year 7 if loss-making, else year 5). At or above it: keep today's margin, capped at 1.5× the benchmark |
+| Sales-to-capital | Average of the company's own ratio and the sector benchmark, or the benchmark alone if the company's ratio is distorted |
+| Beta | Sector unlevered beta, relevered at the company's debt |
+| Terminal growth | Capped at the risk-free rate |
+| Terminal ROIC | Sector benchmark, at least WACC + 2 points |
+| Cost of debt | Synthetic rating if EBIT > 0; otherwise risk-free + country risk + 3% |
+| Banks & insurers | Flagged: use residual income or DDM instead of FCFF |
+
+The company is mapped to a sector group from Yahoo's industry and sector (override it in the app). The sector
+benchmarks are illustrative, in the style of Damodaran's industry averages; edit them in the app's Rulebook
+panel or in `lv_rules.py`, and update them each year.
+
 ## The eight tabs
 
 | Tab | What it does |

@@ -13,21 +13,21 @@ from lv_engine import Company
 # ---------------------------------------------------------------------------
 SAMPLES = {
     "Deccan Digital Services Ltd (sample IT services, ₹ crore)": dict(
-        name="Deccan Digital Services Ltd", ticker="SAMPLE-IT", sector="IT services", currency="₹",
+        name="Deccan Digital Services Ltd", ticker="SAMPLE-IT", sector="Technology", industry="Information Technology Services", currency="₹",
         unit="crore", revenue=24000, ebit=5040, da=720, capex=840, nwc=3600, cash=6500, debt=400,
         minority=50, non_operating=0, options=120, shares=100, price=1050, eff_tax=0.252, interest=40,
         net_income=3850, dividends=2000, book_equity=18000, beta=0.85,
         history={"year": [2022, 2023, 2024, 2025], "revenue": [18500, 20400, 22300, 24000],
                  "ebit": [3900, 4300, 4700, 5040]}),
     "Kaveri Consumer Products Ltd (sample FMCG, ₹ crore)": dict(
-        name="Kaveri Consumer Products Ltd", ticker="SAMPLE-FMCG", sector="FMCG", currency="₹",
+        name="Kaveri Consumer Products Ltd", ticker="SAMPLE-FMCG", sector="Consumer Defensive", industry="Household & Personal Products", currency="₹",
         unit="crore", revenue=15000, ebit=3000, da=300, capex=450, nwc=300, cash=2200, debt=300,
         minority=0, non_operating=500, options=0, shares=50, price=1900, eff_tax=0.255, interest=25,
         net_income=2300, dividends=1700, book_equity=8000, beta=0.65,
         history={"year": [2022, 2023, 2024, 2025], "revenue": [12100, 13000, 14100, 15000],
                  "ebit": [2300, 2550, 2800, 3000]}),
     "Nimbus Cloud Inc (sample US SaaS, $ million)": dict(
-        name="Nimbus Cloud Inc", ticker="SAMPLE-SAAS", sector="Software (SaaS)", currency="$",
+        name="Nimbus Cloud Inc", ticker="SAMPLE-SAAS", sector="Technology", industry="Software - Application", currency="$",
         unit="million", revenue=4200, ebit=380, da=260, capex=300, nwc=-400, cash=2800, debt=1500,
         minority=0, non_operating=0, options=600, shares=310, price=68, eff_tax=0.21, interest=45,
         net_income=330, dividends=0, book_equity=3200, beta=1.3,
@@ -55,6 +55,7 @@ EMPTY_PEERS = pd.DataFrame({"Peer": ["Peer 1", "Peer 2", "Peer 3"], "P/E": [np.n
 
 FIELDS = [
     ("name", "Company name", "text"), ("ticker", "Ticker", "text"), ("sector", "Sector", "text"),
+    ("industry", "Industry", "text"),
     ("currency", "Currency symbol (₹, $, €)", "text"), ("unit", "Money unit (crore or million)", "text"),
     ("revenue", "Revenue, last full year", "num"), ("ebit", "EBIT (operating profit)", "num"),
     ("da", "Depreciation & amortisation", "num"), ("capex", "Capital expenditure", "num"),
@@ -272,7 +273,8 @@ def fetch_ticker(ticker: str):
         warnings.append("Share price not found: enter it on the Company tab.")
     c = Company(
         name=info.get("longName") or info.get("shortName") or ticker, ticker=ticker,
-        sector=info.get("sector") or info.get("industry") or "", currency=sym, unit=unit,
+        sector=info.get("sector") or info.get("industry") or "", industry=info.get("industry") or "",
+        currency=sym, unit=unit,
         revenue=revenue, ebit=ebit,
         da=latest(cf, ["Depreciation And Amortization", "Depreciation Amortization Depletion"], "D&A"),
         capex=latest(cf, ["Capital Expenditure"], "Capex", sign=-1.0),

@@ -159,3 +159,20 @@ def test_investments_excluded_from_invested_capital_and_s2c_floor():
     c2 = Company(**{**c.__dict__, "non_operating": 0.0})
     a2 = defaults_from_company(c2)
     assert a2.sales_to_capital == 2.5 and any("2.5 placeholder" in n for n in a2.notes)
+
+
+def test_rulebook_defaults():
+    from lv_rules import rule_defaults, classify
+    assert classify("Financial Services", "Insurance Brokers") == "Financial platforms"
+    assert classify("Consumer Cyclical", "Internet Retail") == "Internet platforms"
+    assert classify("Financial Services", "Banks - Regional") == "Banks & insurers"
+    c = Company(name="PB", sector="Financial Services", industry="Insurance Brokers", revenue=4977, ebit=60,
+                cash=900, debt=350, book_equity=6900, shares=46, price=1070, eff_tax=0.0, interest=30, beta=0.9,
+                history={"year": [2022, 2025], "revenue": [1425, 4977], "ebit": [-900, 60]})
+    a, log, grp = rule_defaults(c)
+    assert grp == "Financial platforms" and a.high_growth_years == 10 and a.years == 12
+    assert abs(a.target_margin - 0.22) < 1e-9 and a.wacc.beta_method == "bottom_up"
+    assert a.terminal_growth <= a.wacc.rf and a.terminal_roic >= 0.10
+    assert np.isfinite(run_dcf(c, a)["per_share"]) and len(log) >= 8
+    a2, _, g2 = rule_defaults(c, group="Utilities")
+    assert g2 == "Utilities" and abs(a2.target_margin - 0.20) < 1e-9

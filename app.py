@@ -24,6 +24,7 @@ try:
     from valuation.risk import (monte_carlo, reverse_dcf, scenarios, sensitivity_two,
                                 sensitivity_wacc_growth, tornado)
     from valuation.wacc import RATING_TABLE, WaccInputs
+    from valuation.rules import BENCHMARKS, bench_frame, classify, rule_defaults
 except ImportError:
     from lv_checks import STORIES, health_checks
     from lv_data import (EMPTY_PEERS, FIELDS, SAMPLE_PEERS, SAMPLES, company_from_upload,
@@ -35,6 +36,7 @@ except ImportError:
     from lv_risk import (monte_carlo, reverse_dcf, scenarios, sensitivity_two,
                                 sensitivity_wacc_growth, tornado)
     from lv_wacc import RATING_TABLE, WaccInputs
+    from lv_rules import BENCHMARKS, bench_frame, classify, rule_defaults
 
 from contextlib import contextmanager
 
@@ -88,10 +90,32 @@ def put_company(c: Company):
     st.session_state["c_history"] = c.history or {}
     peers = SAMPLE_PEERS.get(c.ticker)
     st.session_state["peers_df"] = (peers if peers is not None else EMPTY_PEERS).copy()
-    a0 = defaults_from_company(c)
-    put_assumptions(a0)
-    st.session_state["default_notes"] = list(a0.notes)
+    st.session_state["rule_group_sel"] = classify(c.sector, c.industry, c.name)
+    apply_start(c)
     st.session_state.pop("mc_res", None)
+
+
+MODES = ["Rulebook (sector benchmarks)", "Company history only"]
+
+
+def apply_start(c: Company):
+    """Set the starting assumptions from the rulebook or from the company's own history."""
+    ss_ = st.session_state
+    if ss_.get("start_mode", MODES[0]) == MODES[0]:
+        bench = ss_.get("bench_edited")
+        a0, log, grp = rule_defaults(c, bench if isinstance(bench, pd.DataFrame) else None,
+                                     ss_.get("rule_group_sel"))
+        ss_["rule_log"], ss_["default_notes"] = log, []
+    else:
+        a0 = defaults_from_company(c)
+        ss_["rule_log"], ss_["default_notes"] = None, list(a0.notes)
+    put_assumptions(a0)
+
+
+def cb_reapply():
+    apply_start(get_company())
+    st.session_state.pop("mc_res", None)
+    st.session_state["msg"] = ("ok", "Starting assumptions re-applied. Your narrative is unchanged.")
 
 
 def put_assumptions(a: Assumptions):
@@ -425,6 +449,33 @@ with tabs[0], guard("Company"):
 # ---------------------------------------------------------------- 2 story
 with tabs[1], guard("Story"):
     tip("story")
+    st.markdown("#### Starting assumptions")
+    r1, r2, r3 = st.columns([2, 2, 1])
+    r1.radio("Start from", MODES, key="start_mode",
+             help="Rulebook: sector benchmarks plus standard valuation rules (recommended). Company history: "
+                  "today's margins and capital intensity carried forward.")
+    r2.selectbox("Sector group used by the rulebook", list(BENCHMARKS), key="rule_group_sel",
+                 disabled=st.session_state.get("start_mode", MODES[0]) != MODES[0])
+    r3.write("")
+    r3.write("")
+    r3.button("Re-apply", on_click=cb_reapply, width="stretch",
+              help="Resets growth, margins, reinvestment, beta and terminal assumptions to the chosen start.")
+    log_ = st.session_state.get("rule_log")
+    if isinstance(log_, pd.DataFrame) and not log_.empty:
+        with st.expander(f"Rules applied to this company ({st.session_state.get('rule_group_sel')})",
+                         expanded=st.session_state.get("mode") == "Learning"):
+            st.dataframe(log_, hide_index=True, width="stretch",
+                         column_config={"Assumption": st.column_config.TextColumn(width="small"),
+                                        "Value": st.column_config.TextColumn(width="medium"),
+                                        "Rule applied": st.column_config.TextColumn(width="large")})
+            st.caption("These are starting points. Change any of them below; the story decides the final numbers.")
+    with st.expander("Rulebook: sector benchmarks (edit to your own views)"):
+        if not isinstance(st.session_state.get("bench_base"), pd.DataFrame):
+            st.session_state["bench_base"] = bench_frame()
+        st.session_state["bench_edited"] = st.data_editor(st.session_state["bench_base"], key="bench_editor",
+                                                          width="stretch")
+        st.caption("Illustrative mature-company benchmarks in the style of Damodaran's industry averages. Edit a "
+                   "cell, then click Re-apply. Update them each year.")
     if st.session_state.get("default_notes"):
         with st.container(border=True):
             st.markdown("**How the starting assumptions were set for this company**")

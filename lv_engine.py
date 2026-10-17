@@ -19,6 +19,7 @@ class Company:
     name: str = "Sample company"
     ticker: str = ""
     sector: str = ""
+    industry: str = ""
     currency: str = "₹"
     unit: str = "crore"            # crore | million
     revenue: float = 10000.0        # last full year
