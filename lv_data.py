@@ -217,6 +217,13 @@ def fetch_ticker(ticker: str):
         nwc = (float(ca.iloc[0]) - float(cl.iloc[0]) - (float(cash_s.iloc[0]) if cash_s is not None else 0)) / scale
     else:
         warnings.append("Working capital not found: set it by hand.")
+    # long-term financial investments are non-operating: valued separately, not part of operating capital
+    inv_s = _pick(bs, ["Investments And Advances", "Investmentin Financial Assets", "Long Term Equity Investment",
+                       "Other Investments"])
+    non_op = float(inv_s.iloc[0]) / scale if inv_s is not None else 0.0
+    if non_op > 0:
+        warnings.append(f"Long-term investments of {sym}{non_op:,.0f} {unit} treated as non-operating assets "
+                        "(added to value, excluded from invested capital). Check on the Company tab.")
     hist_years, hist_rev, hist_ebit = [], [], []
     if rev_s is not None:
         for d, v in list(rev_s.items())[::-1]:
@@ -273,7 +280,7 @@ def fetch_ticker(ticker: str):
         cash=(float(cash_s.iloc[0]) / scale) if cash_s is not None else (info.get("totalCash") or 0) / scale,
         debt=latest(bs, ["Total Debt"], "Total debt", default=(info.get("totalDebt") or 0) / scale),
         minority=latest(bs, ["Minority Interest"], "Minority interest"),
-        non_operating=0.0, options=0.0, shares=shares,
+        non_operating=non_op, options=0.0, shares=shares,
         price=price,
         eff_tax=eff_tax,
         interest=latest(inc, ["Interest Expense", "Interest Expense Non Operating"], "Interest expense"),

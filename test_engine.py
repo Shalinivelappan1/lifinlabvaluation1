@@ -150,3 +150,12 @@ def test_loss_making_defaults_are_sensible():
     assert a.target_margin == 0.12 and a.wacc.beta_method == "bottom_up" and a.wacc.kd_method == "direct"
     assert len(a.notes) == 4
     assert run_dcf(c, a)["per_share"] > 0
+
+
+def test_investments_excluded_from_invested_capital_and_s2c_floor():
+    c = Company(revenue=5000, ebit=60, cash=900, debt=350, non_operating=5000, book_equity=6900, shares=46,
+                price=1070, history={"year": [2022, 2025], "revenue": [1425, 5000], "ebit": [-900, 60]})
+    assert c.ic0() == 6900 + 350 - 900 - 5000
+    c2 = Company(**{**c.__dict__, "non_operating": 0.0})
+    a2 = defaults_from_company(c2)
+    assert a2.sales_to_capital == 2.5 and any("2.5 placeholder" in n for n in a2.notes)

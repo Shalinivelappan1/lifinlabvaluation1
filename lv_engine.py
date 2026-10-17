@@ -43,9 +43,10 @@ class Company:
     history: dict = field(default_factory=dict)  # {"year": [...], "revenue": [...], "ebit": [...]}
 
     def ic0(self) -> float:
+        """Operating invested capital: equity + debt - cash - non-operating investments."""
         if self.invested_capital:
             return self.invested_capital
-        ic = self.book_equity + self.debt - self.cash
+        ic = self.book_equity + self.debt - self.cash - self.non_operating
         return ic if ic > 0 else max(self.revenue * 0.3, 1.0)
 
 
@@ -291,7 +292,14 @@ def defaults_from_company(c: Company) -> Assumptions:
     else:
         a.target_margin = float(margin)
     ic = c.ic0()
-    a.sales_to_capital = float(np.clip(c.revenue / ic, 0.5, 6.0)) if ic > 0 else 2.0
+    s2c_hist = c.revenue / ic if ic > 0 else 2.0
+    a.sales_to_capital = float(np.clip(s2c_hist, 0.5, 6.0))
+    if s2c_hist < 1.0 and a.growth_stage1 >= 0.15:
+        a.sales_to_capital = 2.5
+        a.notes.append(f"Revenue ÷ invested capital is only {s2c_hist:.2f} today, which would make growth very "
+                       "expensive. For a fast grower this is usually distorted by cash, investments or goodwill on "
+                       "the balance sheet, so the default sales-to-capital is a 2.5 placeholder. Asset-light "
+                       "businesses often run at 2–5; set yours on ② Story & assumptions.")
     a.da_pct = c.da / c.revenue if c.revenue else 0.03
     a.capex_pct = c.capex / c.revenue if c.revenue else 0.04
     a.nwc_pct = c.nwc / c.revenue if c.revenue else 0.1
